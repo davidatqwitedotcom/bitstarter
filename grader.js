@@ -21,14 +21,12 @@ References:
    - https://developer.mozilla.org/en-US/docs/JSON#JSON_in_Firefox_2
 */
 
-
 var fs = require('fs');
 var program = require('commander');
 var cheerio = require('cheerio');
 var HTMLFILE_DEFAULT = "index.html";
 var CHECKSFILE_DEFAULT = "checks.json";
 var rest = require('restler');
-var validUrl = "";
 
 var assertFileExists = function(infile) {
     var instr = infile.toString();
@@ -39,34 +37,23 @@ var assertFileExists = function(infile) {
     return instr;
 };
 
-var processUrl = function(url) {
-  var urlstr = url.toString(); 
-  var regex = new RegExp("^(http[s]?:\\/\\/(www\\.)?|ftp:\\/\\/(www\\.)?|www\\.){1}([0-9A-Za-z-\\.@:%_\+~#=]+)+((\\.[a-zA-Z]{2,3})+)(/(.)*)?(\\?(.)*)?");
-  if(regex.test(urlstr)){
-    validUrl = urlstr;
-  }
-};
-
-var cheerioHtmlFile = function(htmlfile) {
-  if(validUrl == "") {
-    return cheerio.load(fs.readFileSync(htmlfile));
-  } else { 
-    rest.get(validUrl).on('complete', function(result) {
-      if (result instanceof Error) {
-        console.log('Error: ' + result.message);
-      } else {
-        cheerio.load(result);
-      }
-    });
-  }
-};
-
 var loadChecks = function(checksfile) {
     return JSON.parse(fs.readFileSync(checksfile));
 };
 
 var checkHtmlFile = function(htmlfile, checksfile) {
-    $ = cheerioHtmlFile(htmlfile);
+    $ = cheerio.load(fs.readFileSync(htmlfile));
+    var checks = loadChecks(checksfile).sort();
+    var out = {};
+    for(var ii in checks) {
+        var present = $(checks[ii]).length > 0;
+        out[checks[ii]] = present;
+    }
+    return out;
+};
+
+var checkHtmlFile2 = function(res, checksfile) {
+    $ = cheerio.load(res);
     var checks = loadChecks(checksfile).sort();
     var out = {};
     for(var ii in checks) {
@@ -86,12 +73,19 @@ if(require.main == module) {
     program
         .option('-c, --checks <check_file>', 'Path to checks.json', clone(assertFileExists), CHECKSFILE_DEFAULT)
         .option('-f, --file <html_file>', 'Path to index.html', clone(assertFileExists), HTMLFILE_DEFAULT)
-	.option('--url <html_url>', 'Path to url', clone(processUrl))
+        .option('--url <html_url>', 'Path to url')
         .parse(process.argv);
-    var checkJson = checkHtmlFile(program.file, program.checks);
-    var outJson = JSON.stringify(checkJson, null, 4);
-    console.log(outJson);
+    if (program.url) {
+      rest.get(program.url).on('complete', function(result){
+	var checkJson = checkHtmlFile2(result, program.checks);
+	var outJson = JSON.stringify(checkJson, null, 4);
+  	console.log(outJson);
+      });
+    } else {
+       var checkJson = checkHtmlFile(program.file, program.checks);
+       var outJson = JSON.stringify(checkJson, null, 4);
+       console.log(outJson);
+    }
 } else {
     exports.checkHtmlFile = checkHtmlFile;
 }
-
